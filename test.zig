@@ -1,42 +1,42 @@
 const std = @import("std");
 const blib = @import("blib.zig");
 
-test "strings" {
-    blib.println("strings:", .{});
+test "string pushStr" {
+    blib.println("string pushStr:", .{});
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
     var word = try blib.String.from("hello", allocator);
     defer word.deinit();
 
-    try word.push(u8, '!');
+    try word.pushStr(" world!");
 
-    var duplicate = try word.dupe();
-    defer duplicate.deinit();
-
-    duplicate.println();
-
+    blib.println("{s}", .{word.get()});
     blib.println("", .{});
 }
 
-test "dynamic arrays" {
-    blib.println("dynamic arrays:", .{});
+test "string toUppercase" {
+    blib.println("string toUppercase:", .{});
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var nums = try blib.Dyn(i32).init(allocator);
-    defer nums.deinit();
+    var word = try blib.String.from("hello!", allocator);
+    defer word.deinit();
 
-    try nums.push(10);
-    try nums.push(20);
+    word.toUppercase();
+    blib.println("{s}", .{word.get()});
+    blib.println("", .{});
+}
 
-    if (nums.dequeue()) |num| {
-        blib.println("{}", .{num});
-    }
+test "string compare" {
+    blib.println("string compare:", .{});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
 
-    if (nums.pop()) |num| {
-        blib.println("{}", .{num});
-    }
+    var word = try blib.String.from("hello!", allocator);
+    defer word.deinit();
+
+    blib.println("{}", .{word.compare("hello!")});
     blib.println("", .{});
 }
 

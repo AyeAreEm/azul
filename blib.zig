@@ -18,7 +18,7 @@ pub fn Dyn(comptime T: type) type {
             return arr;
         }
 
-        pub fn with_capacity(allocator: std.mem.Allocator, cap: usize) !Dyn(T) {
+        pub fn withCapacity(allocator: std.mem.Allocator, cap: usize) !Dyn(T) {
             var arr: Dyn(T) = undefined;
             arr.len = 0;
             arr.head = 0;
@@ -52,7 +52,7 @@ pub fn Dyn(comptime T: type) type {
             self.data = try self.allocator.realloc(self.data, self.cap * @sizeOf(T));
         }
 
-        pub fn resize_with_size(self: *Dyn(T), size: usize) !void {
+        pub fn resizeWithSize(self: *Dyn(T), size: usize) !void {
             self.cap = (self.cap * 2) + size;
             self.data = try self.allocator.realloc(self.data, self.cap * @sizeOf(T));
         }
@@ -91,6 +91,16 @@ pub fn Dyn(comptime T: type) type {
             return elem;
         }
 
+        pub fn clear(self: *Dyn(T)) void {
+            self.len = 0;
+            self.head = 0;
+            self.data[0] = 0;
+        }
+
+        // pub fn remove() !void {
+        //     std.mem.trim(comptime T: type, slice: []const T, values_to_strip: []const T)
+        // }
+
         pub fn deinit(self: *Dyn(T)) void {
             self.len = 0;
             self.head = 0;
@@ -107,8 +117,8 @@ pub const String = struct {
         return String{ .buf = try Dyn(u8).init(allocator) };
     }
 
-    pub fn with_capacity(allocator: std.mem.Allocator, cap: usize) !String {
-        return String{ .buf = try Dyn(u8).with_capacity(allocator, cap) };
+    pub fn withCapacity(allocator: std.mem.Allocator, cap: usize) !String {
+        return String{ .buf = try Dyn(u8).withCapacity(allocator, cap) };
     }
 
     pub fn dupe(self: *String) !String {
@@ -143,46 +153,148 @@ pub const String = struct {
         return str;
     }
 
-    pub fn push_char(self: *String, ch: u8) !void {
+    pub fn at(self: *String, index: usize) ?u8 {
+        return self.buf.at(index);
+    }
+
+    pub fn replace(self: *String, index: usize, ch: u8) !void {
+        if (self.buf.head + index >= self.buf.cap) {
+            return error.IndexOutOfCapacityBounds;
+        }
+
+        self.buf.data[self.buf.head + index] = ch;
+    }
+
+    pub fn pushChar(self: *String, ch: u8) !void {
         if (self.buf.len + 1 >= self.buf.cap) {
             try self.buf.resize();
         }
 
-        self.buf.data[self.buf.len] = ch;
+        try self.replace(self.buf.len, ch);
         self.buf.len += 1;
-        self.buf.data[self.buf.len] = 0;
+        try self.replace(self.buf.len, ch);
     }
 
-    pub fn push_cstr(self: *String, content: []const u8) !void {
+    pub fn pushStr(self: *String, content: []const u8) !void {
         if (self.buf.len + content.len >= self.buf.cap) {
-            try self.buf.resize_with_size(content.len);
+            try self.buf.resizeWithSize(content.len);
         }
 
-        for (content, 0..) |ch, i| {
-            self.buf.data[self.buf.len + i] = ch;
-            self.buf.len += 1;
-        }
-        // add \0
-        std.debug.print("{}", .{self.buf.data[self.buf.len]});
-    }
-
-    pub fn push(self: *String, comptime T: type, content: T) !void {
-        if (@TypeOf(T) == @TypeOf(u8)) {
-            try self.push_char(content);
-        } else if (@TypeOf(T) == @TypeOf([]const u8)) {
-            try self.push_cstr(content);
+        for (content) |ch| {
+            try self.pushChar(ch);
         }
     }
 
-    pub fn print(content: String) void {
-        for (0..content.buf.len) |i| {
-            std.debug.print("{c}", .{content.buf.data[i]});
+    pub fn containsChar(self: *String, pattern: u8) struct { bool, usize } {
+        for (0..self.buf.len) |i| {
+            if (self.buf.data[i] == pattern) {
+                return .{ true, i };
+            }
+        }
+
+        return .{ false, 0 };
+    }
+
+    pub fn constainsStr(self: *String, pattern: []const u8) .{ bool, usize } {
+        var head = 0;
+        var index = 0;
+
+        if (self.buf.len < pattern.len) {
+            return .{ false, 0 };
+        }
+
+        for (0..self.buf.len) |i| {
+            if (head == pattern.len) {
+                return .{ true, index };
+            }
+
+            if (self.buf.data[i] == pattern[head]) {
+                head += 1;
+            } else {
+                head = 0;
+                index = i;
+            }
+        }
+
+        if (head == pattern.len) {
+            return .{ true, index };
         }
     }
 
-    pub fn println(content: String) void {
-        String.print(content);
-        std.debug.print("\n", .{});
+    pub fn containsString(self: *String, pattern: String) struct { bool, usize } {
+        var head = 0;
+        var index = 0;
+
+        if (self.buf.len < pattern.buf.len) {
+            return .{ false, 0 };
+        }
+
+        for (0..self.buf.len) |i| {
+            if (head == pattern.buf.len) {
+                return .{ true, index };
+            }
+
+            if (self.buf.data[i] == pattern.buf.data[head]) {
+                head += 1;
+            } else {
+                head = 0;
+                index = i;
+            }
+        }
+
+        if (head == pattern.buf.len) {
+            return .{ true, index };
+        }
+    }
+
+    pub fn compare(self: *String, comparate: []const u8) bool {
+        if (self.buf.len != comparate.len) {
+            return false;
+        }
+
+        for (comparate, 0..) |ch, i| {
+            if (self.buf.data[i] != ch) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    pub fn startsWith(self: *String, pattern: u8) bool {
+        if (self.at(0)) |ch| {
+            return ch == pattern;
+        }
+
+        return false;
+    }
+
+    pub fn endsWith(self: *String, pattern: u8) bool {
+        if (self.at(self.buf.len - 1)) |ch| {
+            return ch == pattern;
+        }
+
+        return false;
+    }
+
+    pub fn toUppercase(self: *String) void {
+        self.buf.data = std.ascii.upperString(self.buf.data, self.buf.data);
+    }
+
+    pub fn toLowercase(self: *String) void {
+        self.buf.data = std.ascii.lowerString(self.buf.data, self.buf.data);
+    }
+
+    pub fn get(self: *String) []const u8 {
+        return self.buf.data[self.buf.head..self.buf.len];
+    }
+
+    pub fn getMut(self: *String) []u8 {
+        return self.buf.data[self.buf.head..self.buf.len];
+    }
+
+    pub fn clear(self: *String) void {
+        self.buf.clear();
     }
 
     pub fn deinit(self: *String) void {
