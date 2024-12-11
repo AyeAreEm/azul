@@ -1,10 +1,9 @@
-# Blib
-Basics Library, not to be mistaken with Standard Library, is a STL for common functions and algorithms in Zig, similar to the "Basics" module in Jai.<br>
-Blib will be a single file library just for nostalgia with C's single header libraries.
+# Azul
+A Zig Utility Library, not to be confused with the [board game](https://en.wikipedia.org/wiki/Azul_(board_game)), is a library with common data structures and algorithms seen in "modern" standard libaries.
 
-# Libraries
+# Includes
 - Dynamic Arrays
 - Allocated Strings
-- RNGs
-- Easier Input Ouput
-- Easier File System
+- RNGs (not yet)
+- Simplified Input Ouput (not yet)
+- Simplified File System (not yet)
