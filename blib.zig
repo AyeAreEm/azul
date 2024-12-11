@@ -3,7 +3,6 @@ const std = @import("std");
 pub fn Dyn(comptime T: type) type {
     return struct {
         data: []T,
-        head: usize,
         len: usize,
         cap: usize,
         allocator: std.mem.Allocator,
@@ -11,7 +10,6 @@ pub fn Dyn(comptime T: type) type {
         pub fn init(allocator: std.mem.Allocator) !Dyn(T) {
             var arr: Dyn(T) = undefined;
             arr.len = 0;
-            arr.head = 0;
             arr.cap = 32;
             arr.allocator = allocator;
             arr.data = try allocator.alloc(T, arr.cap);
@@ -21,7 +19,6 @@ pub fn Dyn(comptime T: type) type {
         pub fn withCapacity(allocator: std.mem.Allocator, cap: usize) !Dyn(T) {
             var arr: Dyn(T) = undefined;
             arr.len = 0;
-            arr.head = 0;
             arr.cap = cap;
             arr.allocator = allocator;
             arr.data = try allocator.alloc(T, arr.cap);
@@ -32,7 +29,6 @@ pub fn Dyn(comptime T: type) type {
             const new_buf = try self.allocator.dupe(T, self.data);
             return Dyn(T){
                 .len = self.len,
-                .head = self.head,
                 .cap = self.cap,
                 .allocator = self.allocator,
                 .data = new_buf,
@@ -44,7 +40,7 @@ pub fn Dyn(comptime T: type) type {
                 return null;
             }
 
-            return self.data[self.head + index];
+            return self.data[index];
         }
 
         pub fn resize(self: *Dyn(T)) !void {
@@ -79,31 +75,33 @@ pub fn Dyn(comptime T: type) type {
             return elem;
         }
 
-        pub fn dequeue(self: *Dyn(T)) ?T {
-            if (self.len == 0) {
-                return null;
+        pub fn replace(self: *Dyn(T), index: usize, elem: T) !void {
+            if (index >= self.len) {
+                return error.IndexOutOfBounds;
             }
 
-            const elem = self.at(0);
-            self.len -= 1;
-            self.head += 1;
-
-            return elem;
+            self.data[index] = elem;
         }
 
         pub fn clear(self: *Dyn(T)) void {
             self.len = 0;
-            self.head = 0;
             self.data[0] = 0;
         }
 
-        // pub fn remove() !void {
-        //     std.mem.trim(comptime T: type, slice: []const T, values_to_strip: []const T)
-        // }
+        pub fn remove(self: *Dyn(T), index: usize) !void {
+            if (index >= self.len) {
+                return error.IndexOutOfBounds;
+            }
+
+            for (index + 1..self.len) |i| {
+                self.data[i - 1] = self.data[i];
+            }
+
+            self.len -= 1;
+        }
 
         pub fn deinit(self: *Dyn(T)) void {
             self.len = 0;
-            self.head = 0;
             self.cap = 0;
             self.allocator.free(self.data);
         }
@@ -122,14 +120,7 @@ pub const String = struct {
     }
 
     pub fn dupe(self: *String) !String {
-        const new_buf = try self.buf.allocator.dupe(u8, self.buf.data);
-        var new_str = String{ .buf = .{
-            .len = self.buf.len,
-            .head = self.buf.head,
-            .cap = self.buf.cap,
-            .allocator = self.buf.allocator,
-            .data = new_buf,
-        } };
+        var new_str = String{ .buf = self.buf.dupe() };
 
         if (new_str.buf.len + 1 >= new_str.buf.cap) {
             try new_str.buf.resize();
@@ -157,25 +148,17 @@ pub const String = struct {
         return self.buf.at(index);
     }
 
-    pub fn replace(self: *String, index: usize, ch: u8) !void {
-        if (self.buf.head + index >= self.buf.cap) {
-            return error.IndexOutOfCapacityBounds;
-        }
-
-        self.buf.data[self.buf.head + index] = ch;
-    }
-
     pub fn pushChar(self: *String, ch: u8) !void {
         if (self.buf.len + 1 >= self.buf.cap) {
             try self.buf.resize();
         }
 
-        try self.replace(self.buf.len, ch);
+        self.buf.data[self.buf.len] = ch;
         self.buf.len += 1;
-        try self.replace(self.buf.len, ch);
+        self.buf.data[self.buf.len] = 0;
     }
 
-    pub fn pushStr(self: *String, content: []const u8) !void {
+    pub fn pushSlice(self: *String, content: []const u8) !void {
         if (self.buf.len + content.len >= self.buf.cap) {
             try self.buf.resizeWithSize(content.len);
         }
@@ -183,6 +166,38 @@ pub const String = struct {
         for (content) |ch| {
             try self.pushChar(ch);
         }
+    }
+
+    pub fn pushString(self: *String, content: String) !void {
+        try self.pushSlice(content.getSlice());
+    }
+
+    pub fn push(self: *String, elem: anytype) !void {
+        switch (@TypeOf(elem)) {
+            comptime_int => {
+                // const char: u8 = @intCast(elem);
+                // try self.pushChar(char);
+                try self.pushChar(elem);
+            },
+            []const u8 => {
+                try self.pushSlice(elem);
+            },
+            String => {
+                try self.pushString(elem);
+            },
+            else => {
+                const slice = if (@typeInfo(@TypeOf(elem)) == .Pointer) elem else &elem;
+                try self.pushSlice(slice);
+            },
+        }
+    }
+
+    pub fn pop(self: *String) ?u8 {
+        return self.buf.pop();
+    }
+
+    pub fn replace(self: *String, index: usize, ch: u8) !void {
+        try self.buf.replace(index, ch);
     }
 
     pub fn containsChar(self: *String, pattern: u8) struct { bool, usize } {
@@ -195,9 +210,9 @@ pub const String = struct {
         return .{ false, 0 };
     }
 
-    pub fn constainsStr(self: *String, pattern: []const u8) .{ bool, usize } {
-        var head = 0;
-        var index = 0;
+    pub fn containsSlice(self: *String, pattern: []const u8) struct { bool, usize } {
+        var head: usize = 0;
+        var index: usize = 0;
 
         if (self.buf.len < pattern.len) {
             return .{ false, 0 };
@@ -212,42 +227,44 @@ pub const String = struct {
                 head += 1;
             } else {
                 head = 0;
-                index = i;
+                if (i == 0) {
+                    index = 1;
+                } else {
+                    index = i;
+                }
             }
         }
 
         if (head == pattern.len) {
             return .{ true, index };
         }
+
+        return .{ false, 0 };
     }
 
     pub fn containsString(self: *String, pattern: String) struct { bool, usize } {
-        var head = 0;
-        var index = 0;
+        return self.containsSlice(pattern.getSlice());
+    }
 
-        if (self.buf.len < pattern.buf.len) {
-            return .{ false, 0 };
-        }
-
-        for (0..self.buf.len) |i| {
-            if (head == pattern.buf.len) {
-                return .{ true, index };
-            }
-
-            if (self.buf.data[i] == pattern.buf.data[head]) {
-                head += 1;
-            } else {
-                head = 0;
-                index = i;
-            }
-        }
-
-        if (head == pattern.buf.len) {
-            return .{ true, index };
+    pub fn contains(self: *String, pattern: anytype) !struct { bool, usize } {
+        switch (@TypeOf(pattern)) {
+            comptime_int => {
+                return self.containsChar(pattern);
+            },
+            []const u8 => {
+                return self.containsSlice(pattern);
+            },
+            String => {
+                return self.containsString(pattern);
+            },
+            else => {
+                const slice = if (@typeInfo(@TypeOf(pattern)) == .Pointer) pattern else &pattern;
+                return self.containsSlice(slice);
+            },
         }
     }
 
-    pub fn compare(self: *String, comparate: []const u8) bool {
+    pub fn compareSlice(self: *String, comparate: []const u8) bool {
         if (self.buf.len != comparate.len) {
             return false;
         }
@@ -259,6 +276,25 @@ pub const String = struct {
         }
 
         return true;
+    }
+
+    pub fn compareString(self: *String, comparate: String) bool {
+        return self.compareSlice(comparate.getSlice());
+    }
+
+    pub fn compare(self: *String, comparate: anytype) !bool {
+        switch (@TypeOf(comparate)) {
+            []const u8 => {
+                return self.compareSlice(comparate);
+            },
+            String => {
+                return self.compareString(comparate);
+            },
+            else => {
+                const slice = if (@typeInfo(@TypeOf(comparate)) == .Pointer) comparate else &comparate;
+                return self.compareSlice(slice);
+            },
+        }
     }
 
     pub fn startsWith(self: *String, pattern: u8) bool {
@@ -285,11 +321,11 @@ pub const String = struct {
         self.buf.data = std.ascii.lowerString(self.buf.data, self.buf.data);
     }
 
-    pub fn get(self: *String) []const u8 {
-        return self.buf.data[self.buf.head..self.buf.len];
+    pub fn getSlice(self: *String) []const u8 {
+        return self.buf.data[0..self.buf.len];
     }
 
-    pub fn getMut(self: *String) []u8 {
+    pub fn getMutSlice(self: *String) []u8 {
         return self.buf.data[self.buf.head..self.buf.len];
     }
 
@@ -302,10 +338,7 @@ pub const String = struct {
     }
 };
 
-pub fn print(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print(fmt, args);
-}
-
+pub const print = std.debug.print;
 pub fn println(comptime fmt: []const u8, args: anytype) void {
     print(fmt, args);
     print("\n", .{});

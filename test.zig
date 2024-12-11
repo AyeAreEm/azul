@@ -1,43 +1,16 @@
 const std = @import("std");
 const blib = @import("blib.zig");
 
-test "string pushStr" {
-    blib.println("string pushStr:", .{});
+pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var word = try blib.String.from("hello", allocator);
-    defer word.deinit();
+    var s = try blib.String.init(allocator);
+    defer s.deinit();
 
-    try word.pushStr(" world!");
+    try s.push("hello");
+    blib.println("{}", .{try s.contains('o')});
+    blib.println("{}", .{try s.contains("ello")});
 
-    blib.println("{s}", .{word.get()});
-    blib.println("", .{});
+    blib.println("{s}", .{s.getSlice()});
 }
-
-test "string toUppercase" {
-    blib.println("string toUppercase:", .{});
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    var word = try blib.String.from("hello!", allocator);
-    defer word.deinit();
-
-    word.toUppercase();
-    blib.println("{s}", .{word.get()});
-    blib.println("", .{});
-}
-
-test "string compare" {
-    blib.println("string compare:", .{});
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    var word = try blib.String.from("hello!", allocator);
-    defer word.deinit();
-
-    blib.println("{}", .{word.compare("hello!")});
-    blib.println("", .{});
-}
-
-pub fn main() !void {}
